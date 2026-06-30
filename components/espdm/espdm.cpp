@@ -11,7 +11,7 @@ namespace esphome {
 namespace espdm {
 
 static const char *const TAG = "espdm";
-static const char *const ESPDM_VERSION = "0.9.0-extcomp";
+static const char *const ESPDM_VERSION = "0.9.1-extcomp";
 
 void DlmsMeter::setup() {
   ESP_LOGI(TAG, "DLMS smart meter component v%s started", ESPDM_VERSION);
@@ -29,16 +29,21 @@ void DlmsMeter::dump_config() {
 }
 
 void DlmsMeter::loop() {
+  // Drain whatever bytes the UART has buffered right now without blocking.
+  // The full frame (~250 bytes at 2400 baud, ~1 s wire time) is assembled
+  // across many loop() calls; end-of-frame is detected by the silence check
+  // below. The old implementation called delay(10) per byte to coalesce
+  // reads, which made a single loop() call block for ~2.5 s and tripped
+  // ESPHome's "operation took a long time" watchdog.
   unsigned long currentTime = millis();
 
-  while (available()) {
-    uint8_t c;
-    this->read_byte(&c);
+  uint8_t c;
+  while (this->available()) {
+    if (!this->read_byte(&c)) {
+      break;
+    }
     this->receive_buffer_.push_back(c);
-
     this->last_read_ = currentTime;
-    // fix for ESPHOME 2022.12 -> added 10ms delay
-    delay(10);
   }
 
   if (this->receive_buffer_.empty() || currentTime - this->last_read_ <= static_cast<unsigned long>(this->read_timeout_)) {
