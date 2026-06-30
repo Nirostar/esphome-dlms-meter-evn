@@ -1,78 +1,181 @@
-# Overview
+# esphome-dlms-meter-evn
 
-A custom component for ESPHome for reading meter data sent by the Kaifa MA309M via M-Bus.
+An [ESPHome](https://esphome.io/) **external component** for reading
+encrypted DLMS smart-meter data from an Austrian
+[Kaifa MA309M](https://www.kaifa-meter.com/) (as deployed by *EVN / Netz
+Niederösterreich*) over its M-Bus customer interface.
 
-# Features
+Forked from [webeandr/esphome-dlms-meter](https://github.com/webeandr/esphome-dlms-meter)
+(an EVN-special fork of [DomiStyle/esphome-dlms-meter](https://github.com/DomiStyle/esphome-dlms-meter))
+and modernized to work with **ESPHome ≥ 2026.6**, which removed the legacy
+`custom_component` API.
 
-* Exposes all data sent from the smart meter as sensors
-* Allows grouping data together in a single report for storing in InfluxDB or similar
+## What changed vs. the original
 
-# Supported meters
+| Aspect | Original | This fork |
+|---|---|---|
+| Integration mechanism | `custom_component:` lambda + `esphome.includes:` | First-class `external_components` with a declarative YAML schema |
+| Sensor wiring | C++ pointers inside a lambda | Plain YAML: `voltage: { l1: ..., l2: ..., l3: ... }` |
+| Decryption key | C++ byte array literal | YAML hex string (`!secret`-friendly) |
+| AES-GCM on ESP32 | `mbedtls_gcm_*` (broken in ESP-IDF 5.x where `MBEDTLS_GCM_ALT` is on) | ESP-IDF `esp_aes_gcm_*` — **hardware-accelerated** |
+| Component header includes | `#include "esphome.h"` (no longer permitted in external components) | Specific per-feature ESPHome headers |
+| MQTT support | Always compiled | Guarded by `#ifdef USE_MQTT` |
+| ESPHome compatibility | ≤ 2026.5 | ≥ 2026.6 (tested on 2026.6.3 with ESP-IDF 5.5) |
 
-* Kaifa MA309M
+## Supported hardware
 
-# Supported providers
+* **Meter:** Kaifa MA309M (EVN / Netz Niederösterreich)
+* **MCU:** any ESPHome-supported ESP32 (incl. C3 / C6 / S2 / S3) — uses
+  hardware-accelerated AES-GCM via ESP-IDF
+* **M-Bus interface:** any UART-attached M-Bus slave board
+  (e.g. [MIKROE M-Bus Slave Click](https://www.mikroe.com/m-bus-slave-click))
+* **Cabling:** RJ11 to the meter's customer interface
 
-* [TINETZ-Tiroler Netze GmbH](https://www.tinetz.at)
-* [Salzburg Netz GmbH](https://www.salzburgnetz.at)
-* [Innsbrucker Kommunalbetriebe Aktiengesellschaft](https://www.ikb.at)
-* [Vorarlberger Energienetze GmbH](https://www.vorarlbergnetz.at)
+ESP8266 is also supported (BearSSL crypto path retained from upstream),
+but untested in this fork.
 
-# Exposed sensors
+## Exposed measurements
 
-* Voltage L1
-* Voltage L2
-* Voltage L3
-* Amperage L1
-* Amperage L2
-* Amperage L3
-* Active Power Plus
-* Active Power Minus
-* Active Energy Plus
-* Active Energy Minus
-* Reactive Energy Plus
-* Reactive Energy Minus
+* Voltage L1, L2, L3
+* Current L1, L2, L3
+* Active power (+/–)
+* Active energy (+/–)
+* Reactive energy (+/–)
+* Power factor *(EVN-special)*
+* Meter number *(EVN-special)*
+* Meter timestamp
 
-# Requirements
+## Installation
 
-* ESP32 ([supported by ESPHome](https://esphome.io/#devices))
-* RJ11 cable
-* M-Bus to UART board (e.g. https://www.mikroe.com/m-bus-slave-click)
-* RJ11 breakout board **or** soldering iron with some wires
-* ESPHome 1.15.0 or newer
+Add the component as an `external_components` source in your ESPHome YAML:
 
-# Notes
+```yaml
+external_components:
+  - source: github://Nirostar/esphome-dlms-meter-evn
+    components: [espdm]
+    refresh: 1d
+```
 
-* Tested with [ESP32-POE](https://www.olimex.com/Products/IoT/ESP32/ESP32-POE/open-source-hardware) (should work without problems over wifi)
+Or pin a specific ref for reproducible builds:
 
-# Software installation
+```yaml
+external_components:
+  - source: github://Nirostar/esphome-dlms-meter-evn@v1.0.0
+    components: [espdm]
+```
 
-This software installation guide assumes some familiarity with ESPHome.
+For local development, clone this repo next to your YAML and use the
+local source:
 
-* Clone this repository into your ESPHome config files: `git clone git@github.com:DomiStyle/esphome-dlms-meter.git`
-* Copy the meter01.example.yaml into your ESPHome config folder and adjust it to your needs
-* **Don't forget to add your decryption key in meter01.yaml**
-* Connect your ESP
-* Run `esphome meter01.yaml run` and choose your serial port (or do this via the Home Assistant UI)
-* Disconnect the ESP and continue with hardware installation
+```yaml
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [espdm]
+```
 
-Make sure your directory structure looks like this:
+## Minimal configuration
 
-* config
-  * meter01.yaml
-  * esphome-dlms-meter
-    * The files from this repo (espdm.h, ...)
+See [`example.yaml`](example.yaml) for a complete example with all
+sensors. Skeleton:
 
-# Hardware installation
+```yaml
+uart:
+  id: mbus
+  tx_pin: GPIO16
+  rx_pin: GPIO17
+  baud_rate: 2400
+  rx_buffer_size: 2048
 
-* Cut one end of the RJ11 cable and connect wires to pin 3 & 4 **OR** Plug RJ11 into a breakout board
-* Connect everything according to this table:
+espdm:
+  uart_id: mbus
+  key: !secret dlms_decryption_key   # 32 hex chars / 16 bytes
+  voltage:        { l1: meter01_voltage_l1, l2: meter01_voltage_l2, l3: meter01_voltage_l3 }
+  current:        { l1: meter01_current_l1, l2: meter01_current_l2, l3: meter01_current_l3 }
+  active_power:   { plus: meter01_active_power_plus, minus: meter01_active_power_minus, power_factor: meter01_power_factor }
+  active_energy:  { plus: meter01_active_energy_plus, minus: meter01_active_energy_minus }
+  reactive_energy:{ plus: meter01_reactive_energy_plus, minus: meter01_reactive_energy_minus }
+  timestamp:   meter01_timestamp
+  meternumber: meter01_meternumber
+```
 
-| **ESP32** | **M-Bus Board**           | **RJ11** | **Notes** |
-| --------- | ------------- | ---------------- | ----------- |
-| 3.3V        | 3V3 | - | 3.3V power |
-| GND      | GND | - | Ground |
-| GPIO4       | RX    | - | Connect RX from the M-Bus board to TX from the ESP |
-| GPIO36    | TX    | - | Connect TX from the M-Bus board to RX from the ESP |
-| -    | MBUS1    | 3 | Connect M-Bus board to smart meter, polarity does not matter |
-| -    | MBUS2    | 4 | Connect M-Bus board to smart meter, polarity does not matter |
+All listed sensors must exist as `platform: template` sensors in your
+YAML — the espdm component publishes values to them by id. See
+[`example.yaml`](example.yaml) for the full set.
+
+### Optional JSON-over-MQTT bulk publish
+
+If you also want all readings published as a single JSON message
+(useful for InfluxDB or other time-series sinks), enable the optional
+`mqtt:` sub-block:
+
+```yaml
+espdm:
+  # ... sensors as above ...
+  mqtt:
+    mqtt_id: mqtt_broker   # id of your ESPHome `mqtt:` component
+    topic: "meter01/data"
+```
+
+## Getting your decryption key
+
+EVN / Netz Niederösterreich provides the 16-byte AES key on request via
+their self-service portal. You'll receive a key as 32 hex characters
+(e.g. `DEADBEEFCAFEBABEDEADBEEFCAFEBABE` — this is just a placeholder,
+not a real key). Keep yours in `secrets.yaml`, never commit it to a
+public repo.
+
+## Migrating from the old `custom_component` setup
+
+Replace the entire `includes:` + `custom_component:` block with the new
+declarative `espdm:` section as shown above. Your existing
+`platform: template` sensor definitions stay as-is — only the IDs need
+to match what you reference under `espdm:`.
+
+Remove:
+
+```yaml
+esphome:
+  includes:
+    - ./esphome-dlms-meter-evn   # ← delete
+
+custom_component:                # ← delete entire block
+  - lambda: |-
+      auto dlms_meter = new esphome::espdm::DlmsMeter(id(mbus));
+      ...
+```
+
+Add:
+
+```yaml
+external_components:
+  - source: github://Nirostar/esphome-dlms-meter-evn
+    components: [espdm]
+
+espdm:
+  # ... declarative config as shown above ...
+```
+
+## Hardware wiring
+
+Unchanged from upstream:
+
+| ESP32 pin | M-Bus board | RJ11 to meter | Notes |
+|---|---|---|---|
+| 3V3   | 3V3   | —      | Power |
+| GND   | GND   | —      | Ground |
+| GPIO-TX (e.g. 16) | RX | — | ESP TX → M-Bus RX |
+| GPIO-RX (e.g. 17) | TX | — | M-Bus TX → ESP RX |
+| —     | MBUS1 | pin 3  | M-Bus to meter, polarity irrelevant |
+| —     | MBUS2 | pin 4  | M-Bus to meter, polarity irrelevant |
+
+## Acknowledgements
+
+* [DomiStyle/esphome-dlms-meter](https://github.com/DomiStyle/esphome-dlms-meter) — original implementation
+* [webeandr/esphome-dlms-meter](https://github.com/webeandr/esphome-dlms-meter) — EVN-special fork (power factor + meter number)
+* Espressif — for the `esp_aes_gcm_*` hardware-accelerated GCM port
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * Data types as per specification
  */
@@ -57,7 +59,9 @@ enum CodeType
     ActiveEnergyPlus,
     ActiveEnergyMinus,
     ReactiveEnergyPlus,
-    ReactiveEnergyMinus
+    ReactiveEnergyMinus,
+    MeterNumber,   // EVN Special
+    PowerFactor    // EVN Special
 };
 
 enum Accuracy
@@ -88,7 +92,7 @@ static const int OBIS_F = 5;
  * Metadata
  */
 
-static uint8_t ESPDM_TIMESTAMP[]
+static const uint8_t ESPDM_TIMESTAMP[]
 {
     0x01, 0x00
 };
@@ -107,7 +111,7 @@ static const uint8_t ESPDM_DEVICE_NAME[]
  * Voltage
  */
 
-static uint8_t ESPDM_VOLTAGE_L1[]
+static const uint8_t ESPDM_VOLTAGE_L1[]
 {
     0x20, 0x07
 };
@@ -179,4 +183,13 @@ static const uint8_t ESPDM_REACTIVE_ENERGY_PLUS[]
 static const uint8_t ESPDM_REACTIVE_ENERGY_MINUS[]
 {
     0x04, 0x08
+};
+
+/*
+ * EVN Special
+*/
+
+static const uint8_t ESPDM_POWER_FACTOR[]
+{
+    0x0D, 0x07
 };

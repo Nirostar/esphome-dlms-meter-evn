@@ -1,41 +1,57 @@
+# Example ESPHome configuration for an Austrian Kaifa MA309M (EVN/NÖ) smart meter
+# read over its M-Bus customer interface, using the modernized
+# esphome-dlms-meter-evn external component.
+#
+# Adjust pins, board, network, and secrets to match your setup.
+# Put all sensitive values into your secrets.yaml (see secrets.example.yaml).
+
 esphome:
-  name: meter01
-  platform: ESP32
-  board: esp32-poe
-  includes:
-    - ./esphome-dlms-meter
+  name: power-meter
+  friendly_name: power-meter
 
-ethernet:
-  type: LAN8720
-  mdc_pin: GPIO23
-  mdio_pin: GPIO18
-  clk_mode: GPIO17_OUT
-  phy_addr: 0
-  power_pin: GPIO12
-  domain: .example.org
+esp32:
+  board: esp32-c6-devkitc-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
 
-# Enable logging
+external_components:
+  # Published fork:
+  - source: github://Nirostar/esphome-dlms-meter-evn
+    components: [espdm]
+    refresh: 1d
+  # Or, for local development, comment the above and use:
+  # - source:
+  #     type: local
+  #     path: components
+  #   components: [espdm]
+
 logger:
   level: INFO
-#  tx_buffer_size: 2048 # Only needed when logging large packets
 
-# Enable Home Assistant API if not using MQTT
-#api:
-#  password: "1234"
-#  reboot_timeout: 0s
+api:
+  encryption:
+    key: !secret api_encryption_key
 
 ota:
-  password: "1234"
+  - platform: esphome
+    password: !secret ota_password
 
-#web_server:
-#  port: 80
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Power-Meter Fallback Hotspot"
+    password: !secret wifi_ap_password
+
+captive_portal:
 
 uart:
-  tx_pin: GPIO4
-  rx_pin: GPIO36
-  baud_rate: 2400
-  rx_buffer_size: 1024 # Needed to receive the large packets send by the smart meter
   id: mbus
+  tx_pin: GPIO16
+  rx_pin: GPIO17
+  baud_rate: 2400
+  rx_buffer_size: 2048
 
 sensor:
   - platform: template
@@ -43,118 +59,140 @@ sensor:
     name: meter01_voltage_l1
     unit_of_measurement: V
     accuracy_decimals: 1
-    device_class: "voltage"
-    state_class: "measurement"
+    device_class: voltage
+    state_class: measurement
   - platform: template
     id: meter01_voltage_l2
     name: meter01_voltage_l2
     unit_of_measurement: V
     accuracy_decimals: 1
-    device_class: "voltage"
-    state_class: "measurement"
+    device_class: voltage
+    state_class: measurement
   - platform: template
     id: meter01_voltage_l3
     name: meter01_voltage_l3
     unit_of_measurement: V
     accuracy_decimals: 1
-    device_class: "voltage"
-    state_class: "measurement"
+    device_class: voltage
+    state_class: measurement
 
   - platform: template
     id: meter01_current_l1
     name: meter01_current_l1
     unit_of_measurement: A
     accuracy_decimals: 2
-    device_class: "current"
-    state_class: "measurement"
+    device_class: current
+    state_class: measurement
   - platform: template
     id: meter01_current_l2
     name: meter01_current_l2
     unit_of_measurement: A
     accuracy_decimals: 2
-    device_class: "current"
-    state_class: "measurement"
+    device_class: current
+    state_class: measurement
   - platform: template
     id: meter01_current_l3
     name: meter01_current_l3
     unit_of_measurement: A
     accuracy_decimals: 2
-    device_class: "current"
-    state_class: "measurement"
+    device_class: current
+    state_class: measurement
 
   - platform: template
     id: meter01_active_power_plus
     name: meter01_active_power_plus
     unit_of_measurement: W
     accuracy_decimals: 0
-    device_class: "power"
-    state_class: "measurement"
+    device_class: power
+    state_class: measurement
   - platform: template
     id: meter01_active_power_minus
     name: meter01_active_power_minus
     unit_of_measurement: W
     accuracy_decimals: 0
-    device_class: "power"
-    state_class: "measurement"
+    device_class: power
+    state_class: measurement
+  - platform: template
+    id: meter01_power_factor
+    name: meter01_power_factor
+    accuracy_decimals: 3
+    device_class: power_factor
+    state_class: measurement
 
   - platform: template
     id: meter01_active_energy_plus
     name: meter01_active_energy_plus
     unit_of_measurement: Wh
     accuracy_decimals: 0
-    device_class: "energy"
-    state_class: "total_increasing"
+    device_class: energy
+    state_class: total_increasing
   - platform: template
     id: meter01_active_energy_minus
     name: meter01_active_energy_minus
     unit_of_measurement: Wh
     accuracy_decimals: 0
-    device_class: "energy"
-    state_class: "total_increasing"
+    device_class: energy
+    state_class: total_increasing
 
   - platform: template
     id: meter01_reactive_energy_plus
     name: meter01_reactive_energy_plus
     unit_of_measurement: Wh
     accuracy_decimals: 0
-    device_class: "energy"
-    state_class: "total_increasing"
+    device_class: energy
+    state_class: total_increasing
   - platform: template
     id: meter01_reactive_energy_minus
     name: meter01_reactive_energy_minus
     unit_of_measurement: Wh
     accuracy_decimals: 0
-    device_class: "energy"
-    state_class: "total_increasing"
+    device_class: energy
+    state_class: total_increasing
 
 text_sensor:
   - platform: template
     id: meter01_timestamp
     name: meter01_timestamp
+  - platform: template
+    id: meter01_meternumber
+    name: meter01_meternumber
 
+# Optional: publish each measurement individually AND get a JSON snapshot below.
 mqtt:
-  broker: 192.168.1.1
+  broker: !secret mqtt_broker
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
   id: mqtt_broker
+  discovery: true
 
-custom_component:
-  - lambda: |-
+espdm:
+  id: dlms_meter1
+  uart_id: mbus
+  key: !secret dlms_decryption_key       # 32 hex chars / 16 bytes AES key from your provider
+  voltage:
+    l1: meter01_voltage_l1
+    l2: meter01_voltage_l2
+    l3: meter01_voltage_l3
+  current:
+    l1: meter01_current_l1
+    l2: meter01_current_l2
+    l3: meter01_current_l3
+  active_power:
+    plus: meter01_active_power_plus
+    minus: meter01_active_power_minus
+    power_factor: meter01_power_factor
+  active_energy:
+    plus: meter01_active_energy_plus
+    minus: meter01_active_energy_minus
+  reactive_energy:
+    plus: meter01_reactive_energy_plus
+    minus: meter01_reactive_energy_minus
+  timestamp: meter01_timestamp
+  meternumber: meter01_meternumber
 
-      auto dlms_meter = new esphome::espdm::DlmsMeter(id(mbus));
-
-      uint8_t key[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-      dlms_meter->set_key(key, 16); // Pass your decryption key and key length here
-
-      dlms_meter->set_voltage_sensors(id(meter01_voltage_l1), id(meter01_voltage_l2), id(meter01_voltage_l3)); // Set sensors to use for voltage (optional)
-
-      dlms_meter->set_current_sensors(id(meter01_current_l1), id(meter01_current_l2), id(meter01_current_l3)); // Set sensors to use for current (optional)
-
-      dlms_meter->set_active_power_sensors(id(meter01_active_power_plus), id(meter01_active_power_minus)); // Set sensors to use for active power (optional)
-
-      dlms_meter->set_active_energy_sensors(id(meter01_active_energy_plus), id(meter01_active_energy_minus)); // Set sensors to use for active energy (optional)
-      dlms_meter->set_reactive_energy_sensors(id(meter01_reactive_energy_plus), id(meter01_reactive_energy_minus)); // Set sensors to use for reactive energy (optional)
-
-      dlms_meter->set_timestamp_sensor(id(meter01_timestamp)); // Set sensor to use for timestamp (optional)
-
-      dlms_meter->enable_mqtt(id(mqtt_broker), "meter01/data"); // Enable grouped together MQTT report, useful to get exact time with each data for storing results in InfluxDB
-
-      return {dlms_meter};
+  # Uncomment to also publish the full meter snapshot as a single JSON MQTT message
+  # (useful for InfluxDB / time-series sinks):
+  # mqtt:
+  #   mqtt_id: mqtt_broker
+  #   topic: "meter01/data"

@@ -9,3 +9,9 @@
 **/platformio.ini
 /secrets.yaml
 /meter01.yaml
+/power-meter.yaml
+
+# Python bytecode (ESPHome codegen)
+__pycache__/
+*.pyc
+*.pyo
